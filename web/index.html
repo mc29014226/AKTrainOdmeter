@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>車輛里程讀取</title>
+  <style>
+    :root { font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; color: #1f2937; }
+    body { margin: 0; background: #f3f4f6; }
+    .wrap { max-width: 1000px; margin: 48px auto; padding: 0 20px; }
+    .card { background: white; border-radius: 14px; padding: 28px; box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { color: #6b7280; margin-bottom: 22px; }
+    button { border: 0; border-radius: 9px; padding: 11px 20px; font-size: 16px; cursor: pointer; background: #111827; color: white; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #message { margin-left: 12px; color: #6b7280; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    th { background: #f9fafb; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .ok { color: #15803d; font-weight: 600; }
+    .bad { color: #b91c1c; font-weight: 600; }
+    .muted { color: #9ca3af; }
+    @media (max-width: 720px) {
+      .wrap { margin: 18px auto; }
+      .card { padding: 18px; overflow-x: auto; }
+      table { min-width: 720px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>車輛里程讀取</h1>
+      <div class="sub">讀取各車 OBCU 的 avl.log，取得最新 VCU odometry。</div>
+      <button id="readBtn">讀取全部里程</button>
+      <span id="message">尚未讀取</span>
+      <span id="modeBadge" class="muted" style="margin-left:10px"></span>
+
+      <table>
+        <thead>
+          <tr>
+            <th>車號</th>
+            <th>目前里程</th>
+            <th>LOG 時間</th>
+            <th>速度</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="5" class="muted">按「讀取全部里程」開始</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const btn = document.getElementById('readBtn');
+const tbody = document.getElementById('tbody');
+const message = document.getElementById('message');
+const modeBadge = document.getElementById('modeBadge');
+
+function esc(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function renderRow(item) {
+  if (item.status === 'ok') {
+    const mileage = Number(item.mileage_km).toLocaleString('zh-TW', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    });
+    return `<tr>
+      <td>${item.train_no}</td>
+      <td class="num"><strong>${mileage} km</strong></td>
+      <td class="num">${esc(item.timestamp)}</td>
+      <td class="num">${item.speed_kmh} km/h</td>
+      <td class="ok">正常</td>
+    </tr>`;
+  }
+
+  const label = item.status === 'no_data' ? '找不到里程' : '連線/讀取失敗';
+  return `<tr>
+    <td>${item.train_no}</td>
+    <td class="muted">--</td>
+    <td class="muted">--</td>
+    <td class="muted">--</td>
+    <td class="bad" title="${esc(item.error)}">${label}</td>
+  </tr>`;
+}
+
+btn.addEventListener('click', async () => {
+  btn.disabled = true;
+  message.textContent = '讀取中…';
+  tbody.innerHTML = '<tr><td colspan="5" class="muted">正在連線 201～215…</td></tr>';
+
+  try {
+    const response = await fetch('/api/mileage', { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    modeBadge.textContent = data.mode === 'demo' ? 'DEMO 模式（Codespaces 測試資料）' : 'SSH 真車模式';
+    tbody.innerHTML = data.results.map(renderRow).join('');
+    const okCount = data.results.filter(x => x.status === 'ok').length;
+    message.textContent = `完成：${okCount}/${data.count} 台讀取成功`;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="bad">${esc(err.message)}</td></tr>`;
+    message.textContent = '讀取失敗';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
